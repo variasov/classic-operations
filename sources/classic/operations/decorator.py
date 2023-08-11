@@ -1,18 +1,19 @@
 from functools import wraps
-from typing import Any
+from typing import Any, Optional
 
-from classic.components import add_self_annotation
+from classic.components import add_extra_annotation
+from classic.components.types import Method, Decorator
 
 from .operation import NewOperation
 
 
 def operation(
-    original_method=None,
+    original_method: Optional[Method] = None,
     prop_name: str = 'new_operation',
     **params: Any,
-):
+) -> Method | Decorator:
 
-    def decorate(function):
+    def decorate(function: Method) -> Method:
 
         @wraps(function)
         def wrapper(obj, *args: Any, **kwargs: Any) -> Any:
@@ -21,9 +22,7 @@ def operation(
 
             return result
 
-        wrapper = add_self_annotation(wrapper, prop_name, NewOperation)
-
-        return wrapper
+        return add_extra_annotation(wrapper, prop_name, NewOperation)
 
     if original_method:
         return decorate(original_method)
