@@ -1,51 +1,32 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-
 from types import TracebackType
-from typing import Any, Callable, List, Optional, Type
+from typing import List, Optional, Type
 
-
-Callback = Callable[[], None]
-
-
-@dataclass
-class Callbacks:
-    persistent: List[Callback] = field(default_factory=list)
-    transient: List[Callback] = field(default_factory=list)
-
-    def add(self, callback: Callback):
-        self.transient.append(callback)
-
-    def handle(self):
-        try:
-            for callback in self.persistent:
-                callback()
-
-            while self.transient:
-                callback = self.transient.pop(0)
-                callback()
-        except Exception:
-            self.transient.clear()
-            raise
+from .counter import ThreadSafeCounter as Counter
+from .callbacks import ThreadSafeCallbacks as Callbacks, Callback
 
 
 class Operation:
+    _on_start: Callbacks
     _on_complete: Callbacks
     _on_finish: Callbacks
     _on_cancel: Callbacks
 
     def __init__(
         self,
+        on_start: List[Callback] = None,
         on_complete: List[Callback] = None,
         on_cancel: List[Callback] = None,
         on_finish: List[Callback] = None,
     ):
+        self._on_start = Callbacks(on_start or [])
         self._on_complete = Callbacks(on_complete or [])
         self._on_cancel = Callbacks(on_cancel or [])
         self._on_finish = Callbacks(on_finish or [])
 
-    def on_start(self):
-        pass
+        self._counter = Counter()
+
+    def on_start(self, callback: Callback) -> None:
+        self._on_start.add(callback)
 
     def on_complete(self, callback: Callback) -> None:
         self._on_complete.add(callback)
@@ -56,29 +37,29 @@ class Operation:
     def on_finish(self, callback: Callback) -> None:
         self._on_finish.add(callback)
 
-    def start(self):
-        pass
-
     def complete(self):
+        assert not self._counter.is_zero
+
         try:
-            self._on_complete.handle()
-        except Exception:
-            self.cancel()
-            raise
-        else:
-            self.finish()
+            self._on_complete.handle(suppress=True)
+        finally:
+            self._finish()
 
     def cancel(self):
-        try:
-            self._on_cancel.handle()
-        finally:
-            self.finish()
+        assert not self._counter.is_zero
 
-    def finish(self):
-        self._on_finish.handle()
+        try:
+            self._on_cancel.handle(suppress=True)
+        finally:
+            self._finish()
+
+    def _finish(self):
+        self._counter.reset()
+        self._on_finish.handle(suppress=True)
 
     def __enter__(self) -> 'Operation':
-        self.start()
+        self._counter.increment()
+        self._on_start.handle(suppress=False)
         return self
 
     def __exit__(
@@ -86,6 +67,7 @@ class Operation:
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> bool:
+        self._counter.decrement()
 
         if exc_type is None:
             self.complete()
@@ -93,12 +75,3 @@ class Operation:
             self.cancel()
 
         return False
-
-
-class NewOperation(ABC):
-
-    @abstractmethod
-    def new(self, **kwargs: Any) -> Operation: ...
-
-    def __call__(self, **kwargs: Any) -> Operation:
-        return self.new(**kwargs)

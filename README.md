@@ -1,105 +1,72 @@
-# Classic App Layer
+# Classic Operations
 
-This package provides primitives for application layer.
+This package provides primitives for application operations.
 Part of project "Classic".
 
-Usage for validation:
-
+Usage:
 ```python
-from dataclasses import dataclass
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker, scoped_session, Session
 
-from classic.app import DTO, validate_with_dto
-from pydantic import validate_arguments
+from classic.operations import operation, Operation
+from classic.components import component
 
 
-class SomeDTO(DTO):
-    """Based on pydantic.BaseModel. Used for validating input"""
+class SomeRepo:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def select(self):
+        self.session.execute(select(1))
+
+
+@component
+class Service:
+    some_operation: Operation
+    # new_operation prop name by default
+    new_operation: Operation
+    some_repo: SomeRepo
     
-    some_field: int
-    another_field: str
+    # 95% case
+    @operation
+    def method_1(self):
+        self.some_repo.select()
 
+    @operation(prop_name='some_operation')
+    def method_2(self):
+        self.some_repo.select()
 
-@dataclass
-class SomeAppCls:
-    """Some class with app logic. May be mapped on DB."""
-    some_field: int
-    another_field: str
-
-
-class SomeService:
+    def method_3(self):
+        with self.operation as op:
+            if None:
+                self.some_repo.select()
+                op.complete()
     
-    @validate_arguments
-    def some_method(self, arg: int):
-        assert isinstance(arg, int)
+    def method_4(self):
+        with self.operation:
+            self.some_repo.select()
     
-    @validate_with_dto
-    def another_method(self, params: SomeDTO):
-        instance = params.create_obj(SomeAppCls)
-        print(instance)
-
-```
-
-Usage for errors:
-```python
-from classic.app import AppError, ErrorsList
+    def method_5(self):
+        with self.new_operation as op:
+            op.on_complete(lambda: print('Hello'))
 
 
-# Describe errors, possible in application
-class IncorrectState(AppError):
-    msg_template = 'Incorrect app state - "{text}"'
-    code = 'app.incorrect_state'
+class DB:
+    engine = create_engine('DB_URL')
+    session = scoped_session(sessionmaker(bind=engine))
 
-
-class ServiceNotReady(AppError):
-    msg_template = 'Service not ready yet'
-    code = 'app.service_not_ready'
-
-
-# In another file with services:
-class SomeService:
     
-    def __init__(self):
-        self.ready_to_serve = False
+transaction_operation = Operation(
+    on_complete=[DB.session.commit],
+    on_cancel=[DB.session.rollback],
+)
 
-    def is_ready(self):
-        """Demonstrates simple usage"""
-        if not self.ready_to_serve:
-            raise ServiceNotReady()
+repo = SomeRepo(session=DB.session)
+service = Service(
+    new_operation=transaction_operation,
+    some_operation=transaction_operation,
+    some_repo=repo,
+)
 
-    def mark_as_ready(self):
-        """Demonstrates usage of error message templates"""
-        if self.ready_to_serve:
-            raise IncorrectState(text='Service are ready')
-        self.ready_to_serve = True
-
-    def just_give_errors(self):
-        """Demonstrates method, what may have more than 1 error"""
-        errors = [IncorrectState(text='error 1'), 
-                  IncorrectState(text='error 2')]
-        raise ErrorsList(errors)
-
-
-# Somewhere in adapters:
-
-service = SomeService()
-
-try:
-    service.is_ready()
-except AppError as error:
-    print(f'Application responses with error code "{error.code}", '
-          f'message is "{error.message}"')
-
-try:
-    service.mark_as_ready()
-    service.mark_as_ready()
-except AppError as error:
-    print(f'Application responses with error code "{error.code}", '
-          f'message is "{error.message}"')
-    
-try:
-    service.just_give_errors()
-except ErrorsList as errors_list:
-    for error in errors_list.errors:
-        print(f'Application responses with error code "{error.code}", '
-              f'message is "{error.message}"')
+service.method()
 ```

@@ -1,2 +1,2 @@
-from .operation import Operation, NewOperation
+from .operation import Operation
 from .decorator import operation

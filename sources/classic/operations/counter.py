@@ -10,15 +10,19 @@ class Counter:
         self._calls_count += 1
 
     def decrement(self):
-        self._calls_count -= 1
+        if self._calls_count > 0:
+            self._calls_count -= 1
+
+    def reset(self):
+        self._calls_count = 0
 
     @property
-    def is_last(self):
+    def is_zero(self):
         return self._calls_count == 0
 
     @property
-    def is_first(self):
-        return self._calls_count == 1
+    def value(self):
+        return self._calls_count
 
 
 class ThreadSafeCounter(Counter, threading.local):
