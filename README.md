@@ -37,17 +37,17 @@ class Service:
         self.some_repo.select()
 
     def method_3(self):
-        with self.operation as op:
+        with self.some_operation as op:
             if None:
                 self.some_repo.select()
                 op.complete()
     
     def method_4(self):
-        with self.operation:
+        with self.some_operation:
             self.some_repo.select()
     
     def method_5(self):
-        with self.new_operation as op:
+        with self.some_operation as op:
             op.on_complete(lambda: print('Hello'))
 
 

@@ -54,7 +54,6 @@ class Operation:
             self._finish()
 
     def _finish(self):
-        self._counter.reset()
         self._on_finish.handle(suppress=True)
 
     def __enter__(self) -> 'Operation':
@@ -67,11 +66,12 @@ class Operation:
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> bool:
-        self._counter.decrement()
 
         if exc_type is None:
             self.complete()
         else:
             self.cancel()
+
+        self._counter.decrement()
 
         return False
