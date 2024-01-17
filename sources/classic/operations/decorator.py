@@ -10,14 +10,13 @@ from .operation import NewOperation
 def operation(
     original_method: Optional[Method] = None,
     prop_name: str = 'new_operation',
-    **params: Any,
 ) -> Method | Decorator:
 
     def decorate(function: Method) -> Method:
 
         @wraps(function)
         def wrapper(obj, *args: Any, **kwargs: Any) -> Any:
-            with getattr(obj, prop_name)(**params):
+            with getattr(obj, prop_name)():
                 result = function(obj, *args, **kwargs)
 
             return result
