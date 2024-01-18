@@ -1,5 +1,5 @@
 from types import TracebackType
-from typing import Callable, List, Optional, Type, Iterable
+from typing import Callable, List, Optional, Type, Iterable, ContextManager
 
 from .local_dict import ScopedProperty
 
@@ -7,7 +7,7 @@ from .local_dict import ScopedProperty
 Callback = Callable[[], None]
 
 
-class InnerOperation:
+class Callbacks:
 
     def __init__(
         self,
@@ -24,22 +24,24 @@ class InnerOperation:
 
 class Operation:
     _calls_count: int = ScopedProperty(0)
-    _current_operation: InnerOperation = ScopedProperty()
+    _current_operation: Callbacks = ScopedProperty()
 
     def __init__(
         self,
+        context_managers: List[ContextManager] = None,
         on_start: List[Callback] = None,
         on_complete: List[Callback] = None,
         on_cancel: List[Callback] = None,
         on_finish: List[Callback] = None,
     ):
+        self.context_managers = context_managers or []
         self._on_start = on_start or []
         self._on_complete = on_complete or []
         self._on_cancel = on_cancel or []
         self._on_finish = on_finish or []
 
     def _new_inner(self):
-        return InnerOperation(
+        return Callbacks(
             on_start=self._on_start.copy(),
             on_complete=self._on_complete.copy(),
             on_cancel=self._on_cancel.copy(),
