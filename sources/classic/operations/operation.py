@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from types import TracebackType
 from typing import Callable, List, Optional, Type, Iterable, ContextManager
 
@@ -11,46 +12,62 @@ class Callbacks:
 
     def __init__(
         self,
-        on_start: List[Callback] = None,
-        on_complete: List[Callback] = None,
+        before_complete: List[Callback] = None,
+        after_complete: List[Callback] = None,
         on_cancel: List[Callback] = None,
         on_finish: List[Callback] = None,
     ):
-        self.on_start = on_start or []
-        self.on_complete = on_complete or []
+        self.before_complete = before_complete or []
+        self.after_complete = after_complete or []
         self.on_cancel = on_cancel or []
         self.on_finish = on_finish or []
 
 
 class Operation:
     _calls_count: int = ScopedProperty(0)
-    _current_operation: Callbacks = ScopedProperty()
+    _current: Callbacks = ScopedProperty()
+    _exit_stack = ScopedProperty()
 
     def __init__(
         self,
         context_managers: List[ContextManager] = None,
         on_start: List[Callback] = None,
-        on_complete: List[Callback] = None,
+        before_complete: List[Callback] = None,
+        after_complete: List[Callback] = None,
         on_cancel: List[Callback] = None,
         on_finish: List[Callback] = None,
     ):
         self.context_managers = context_managers or []
         self._on_start = on_start or []
-        self._on_complete = on_complete or []
+        self._before_complete = before_complete or []
+        self._after_complete = after_complete or []
         self._on_cancel = on_cancel or []
         self._on_finish = on_finish or []
 
-    def _new_inner(self):
+    def _new_callbacks(self):
         return Callbacks(
-            on_start=self._on_start.copy(),
-            on_complete=self._on_complete.copy(),
+            before_complete=self._before_complete.copy(),
+            after_complete=self._after_complete.copy(),
             on_cancel=self._on_cancel.copy(),
             on_finish=self._on_finish.copy(),
         )
 
     def __enter__(self):
         if self._calls_count == 0:
-            self._start()
+            self._exit_stack = ExitStack()
+
+            try:
+                for context in self.context_managers:
+                    self._exit_stack.enter_context(context)
+
+                self._handle_for_first_error(self._on_start)
+            except Exception:
+                self._exit_stack.pop_all()
+                self._cancel()
+                self._finish()
+                raise
+
+            self._current = self._new_callbacks()
 
         self._calls_count += 1
 
@@ -62,11 +79,26 @@ class Operation:
 
         self._calls_count -= 1
 
-        if self._calls_count == 0:
+        if self._calls_count != 0:
+            return False
+
+        try:
             if exc_type is None:
-                self._complete()
-            else:
-                self._cancel()
+                self._handle_for_first_error(
+                    self._current.before_complete
+                )
+
+            self._exit_stack.__exit__(exc_type, exc_val, exc_tb)
+
+            if exc_type is None:
+                self._handle_for_first_error(
+                    self._current.after_complete
+                )
+        except Exception:
+            self._cancel()
+            raise
+        finally:
+            self._finish()
 
         return False
 
@@ -76,19 +108,19 @@ class Operation:
 
     def before_complete(self, callback: Callback):
         assert self.in_progress
-        self._on_complete.insert(0, callback)
+        self._current.before_complete.insert(0, callback)
 
     def after_complete(self, callback: Callback):
         assert self.in_progress
-        self._on_complete.append(callback)
+        self._current.after_complete.append(callback)
 
     def on_cancel(self, callback: Callback):
         assert self.in_progress
-        self._on_cancel.append(callback)
+        self._current.on_cancel.append(callback)
 
     def on_finish(self, callback: Callback):
         assert self.in_progress
-        self._on_finish.append(callback)
+        self._current.on_finish.append(callback)
 
     @staticmethod
     def _try_handle_all(callbacks: Iterable[Callback]):
@@ -107,36 +139,13 @@ class Operation:
         for callback in callbacks:
             callback()
 
-    def _start(self):
-        self._current_operation = self._new_inner()
-
-        try:
-            self._handle_for_first_error(
-                self._current_operation.on_start
-            )
-        except Exception:
-            self._cancel()
-            self._finish()
-            raise
-
-    def _complete(self):
-        try:
-            self._handle_for_first_error(
-                self._current_operation.on_complete
-            )
-        except Exception:
-            self._cancel()
-            raise
-        finally:
-            self._finish()
-
     def _cancel(self):
         self._try_handle_all(
-            self._current_operation.on_cancel
+            self._current.on_cancel
         )
 
     def _finish(self):
         self._try_handle_all(
-            self._current_operation.on_finish
+            self._current.on_finish
         )
-        self._current_operation = None
+        del self._current
