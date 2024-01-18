@@ -1,4 +1,5 @@
 import threading
+from typing import Any
 from weakref import ref
 
 
@@ -32,12 +33,15 @@ class LocalStorage:
 
 class ScopedProperty:
 
+    def __init__(self, default: Any = None):
+        self.default = default
+
     def __get__(self, instance, owner):
         dct = get_or_create_local_dict()
-        try:
-            return dct[id(self), id(instance)][0]
-        except KeyError as exc:
-            raise AttributeError from exc
+        value = dct.get((id(self), id(instance)), None)
+        if value is None:
+            return self.default
+        return value[0]
 
     def __set__(self, instance, value):
         dct = get_or_create_local_dict()
