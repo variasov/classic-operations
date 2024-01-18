@@ -2,6 +2,8 @@ import threading
 from types import TracebackType
 from typing import Callable, List, Optional, Type, Iterable
 
+from .local_dict import ScopedProperty
+
 
 Callback = Callable[[], None]
 
@@ -106,17 +108,12 @@ class Operation:
     def _finish(self):
         self._handle_all(self._on_finish)
 
-    def copy(self):
-        return Operation(
-            on_start=self._on_start.copy(),
-            on_complete=self._on_complete.copy(),
-            on_cancel=self._on_cancel.copy(),
-            on_finish=self._on_finish.copy(),
-        )
-
 
 class NewOperation:
-    _reference: Operation
+    on_start: List[Callback] = None,
+    on_complete: List[Callback] = None,
+    on_cancel: List[Callback] = None,
+    on_finish: List[Callback] = None,
 
     def __init__(
         self,
@@ -125,15 +122,18 @@ class NewOperation:
         on_cancel: List[Callback] = None,
         on_finish: List[Callback] = None,
     ):
-        self._reference = Operation(
-            on_start=on_start,
-            on_complete=on_complete,
-            on_cancel=on_cancel,
-            on_finish=on_finish,
-        )
+        self._on_start = on_start or []
+        self._on_complete = on_complete or []
+        self._on_cancel = on_cancel or []
+        self._on_finish = on_finish or []
 
     def __call__(self):
-        return self._reference.copy()
+        return Operation(
+            on_start=self._on_start.copy(),
+            on_complete=self._on_complete.copy(),
+            on_cancel=self._on_cancel.copy(),
+            on_finish=self._on_finish.copy(),
+        )
 
 
 class NewScopedOperation(NewOperation):
@@ -157,31 +157,17 @@ class NewScopedOperation(NewOperation):
 
 
 class NewFastScopedOperation(NewOperation):
-
-    @property
-    def _storage(self):
-        thread = threading.current_thread()
-
-        storage = getattr(thread, '__storage__', None)
-        if storage is None:
-            storage = {}
-            setattr(thread, '__storage__', storage)
-
-        return storage
-
-    @property
-    def _current(self):
-        return self._storage[id(self)]
-
-    @_current.setter
-    def _current(self, value):
-        self._storage[id(self)] = value
+    _current = ScopedProperty()
 
     def __call__(self):
         try:
             operation = self._current
-        except AttributeError:
+        except KeyError:
             operation = super().__call__()
             self._current = operation
+        else:
+            if not operation.in_process:
+                operation = super().__call__()
+                self._current = operation
 
         return operation
