@@ -1,4 +1,4 @@
-from functools import wraps
+from functools import wraps, partial
 from typing import Any, Optional
 
 from classic.components import add_extra_annotation
@@ -9,15 +9,15 @@ from .operation import Operation
 
 def operation(
     original_method: Optional[Method] = None,
-    prop_name: str = 'operation',
+    prop_name: str = 'operation_',
 ) -> Method | Decorator:
 
     def decorate(function: Method) -> Method:
 
         @wraps(function)
-        def wrapper(obj, *args: Any, **kwargs: Any) -> Any:
-            with getattr(obj, prop_name):
-                result = function(obj, *args, **kwargs)
+        def wrapper(self, *args: Any, **kwargs: Any) -> Any:
+            with getattr(self, prop_name):
+                result = function(self, *args, **kwargs)
 
             return result
 
@@ -27,3 +27,7 @@ def operation(
         return decorate(original_method)
 
     return decorate
+
+
+def customized_operation(prop_name: str):
+    return partial(operation, prop_name=prop_name)
