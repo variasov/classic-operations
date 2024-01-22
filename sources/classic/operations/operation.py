@@ -1,16 +1,17 @@
 from contextlib import ExitStack
 from types import TracebackType
 from typing import List, Optional, Type, Iterable, ContextManager
-
-from classic.thread_safety_utils import ScopedProperty
+import threading
 
 from .callbacks import Callback, Callbacks
 
 
-class Operation:
-    _calls_count: int = ScopedProperty(0)
-    _current: Callbacks = ScopedProperty()
-    _exit_stack = ScopedProperty()
+class Operation(threading.local):
+    """
+    Класс для выделения границ операций в приложении.
+
+
+    """
 
     def __init__(
         self,
@@ -29,8 +30,12 @@ class Operation:
         self._after_complete = after_complete or []
         self._on_cancel = on_cancel or []
         self._on_finish = on_finish or []
+        self._calls_count = 0
+        self._exit_stack = ExitStack()
+        self._current = None
 
     def _new_callbacks(self):
+        """Порождает новый контейнер с callback-ами."""
         return Callbacks(
             before_complete=self._before_complete.copy(),
             after_complete=self._after_complete.copy(),
@@ -39,8 +44,13 @@ class Operation:
         )
 
     def __enter__(self):
+        """
+        Запуск операции.
+        При первом обращении запускает callback-и before_start, затем
+        выполняет вход во все указанные контекстные менеджеры, затем
+        запускает callback-и after_start.
+        """
         if self._calls_count == 0:
-            self._exit_stack = ExitStack()
             self._current = self._new_callbacks()
 
             try:
@@ -55,8 +65,8 @@ class Operation:
                 new_exc = None
                 try:
                     self._exit_stack.__exit__(type(exc), exc, exc.__traceback__)
-                except Exception as new_exc:
-                    pass
+                except Exception as exc_:
+                    new_exc = exc_
                 try:
                     self._cancel()
                 finally:
@@ -70,7 +80,9 @@ class Operation:
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> bool:
+        """
 
+        """
         self._calls_count -= 1
 
         if self._calls_count != 0:
@@ -108,27 +120,51 @@ class Operation:
         return False
 
     @property
-    def in_progress(self):
+    def in_progress(self) -> bool:
+        """Сигнализирует о состоянии операции.
+        True - запущена, False - не запущена.
+        """
         return self._calls_count > 0
 
     def before_complete(self, callback: Callback):
+        """Добавляет callback для вызова перед успешным завершением операции.
+        Callback может быть любым вызываемым объектом
+        и не должен принимать аргументов.
+        """
         assert self.in_progress
         self._current.before_complete.append(callback)
 
     def after_complete(self, callback: Callback):
+        """Добавляет callback для вызова после успешного завершения операции.
+        Callback может быть любым вызываемым объектом
+        и не должен принимать аргументов.
+        """
         assert self.in_progress
         self._current.after_complete.append(callback)
 
     def on_cancel(self, callback: Callback):
+        """Добавляет callback для вызова при отмене операции.
+        Callback может быть любым вызываемым объектом
+        и не должен принимать аргументов.
+        """
         assert self.in_progress
         self._current.on_cancel.append(callback)
 
     def on_finish(self, callback: Callback):
+        """Добавляет callback для вызова после окончания операции.
+        Callback может быть любым вызываемым объектом
+        и не должен принимать аргументов.
+        """
         assert self.in_progress
         self._current.on_finish.append(callback)
 
     @staticmethod
     def _try_handle_all(callbacks: Iterable[Callback]):
+        """Вызывает указанные callbacks последовательно,
+        отлавливая и аккумулируя ошибки из callbacks.
+        В случае, если ошибки все же произошли, выкинет RuntimeError,
+        содержащий список ошибок.
+        """
         errors = []
         for callback in callbacks:
             try:
@@ -141,15 +177,26 @@ class Operation:
 
     @staticmethod
     def _handle_for_first_error(callbacks: Iterable[Callback]):
+        """Попытка вызывать указанные callbacks последовательно,
+        без отлова ошибок в callbacks.
+        """
         for callback in callbacks:
             callback()
 
     def _cancel(self):
+        """Отмена операции.
+        Вызывает все callbacks, назначенные на отмену операции,
+        независимо друг от друга.
+        """
         self._try_handle_all(
             self._current.on_cancel
         )
 
     def _finish(self):
+        """Завершение операции.
+        Вызывает все callbacks, назначенные на завершение операции,
+        чистит текущее состояние.
+        """
         self._try_handle_all(
             self._current.on_finish
         )
