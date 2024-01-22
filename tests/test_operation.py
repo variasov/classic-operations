@@ -384,3 +384,28 @@ def test_error_in_after_complete(service, callbacks):
     after.assert_not_called()
     cancel.assert_called_once()
     finish.assert_called_once()
+
+
+def test_instancing_with_no_iterable():
+    context_manager = Mock()
+    before_start = Mock()
+    after_start = Mock()
+    before_complete = Mock()
+    after_complete = Mock()
+
+    operation_ = Operation(
+        context_managers=context_manager,
+        before_start=before_start,
+        after_start=after_start,
+        before_complete=before_complete,
+        after_complete=[after_complete],
+        on_cancel=None,
+    )
+
+    assert operation_._context_managers == [context_manager]
+    assert operation_._before_start == [before_start]
+    assert operation_._after_start == [after_start]
+    assert operation_._before_complete == [before_complete]
+    assert operation_._after_complete == [after_complete]
+    assert operation_._on_cancel == []
+    assert operation_._on_finish == []

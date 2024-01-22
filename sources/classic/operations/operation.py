@@ -1,37 +1,67 @@
 from contextlib import ExitStack
 from types import TracebackType
-from typing import List, Optional, Type, Iterable, ContextManager
+from typing import List, Optional, Type, Iterable, ContextManager, Union
 import threading
 
 from .callbacks import Callback, Callbacks
+
+
+OptionalContextManagers = Union[ContextManager, List[ContextManager], None]
+OptionalCallbacks = Union[Callback, List[Callback], None]
+
+
+def to_list(obj):
+    if obj is None:
+        return []
+    elif isinstance(obj, Iterable):
+        return list(obj)
+    else:
+        return [obj]
 
 
 class Operation(threading.local):
     """
     Класс для выделения границ операций в приложении.
 
+    Представляет собой контекстный менеджер, которым следует оборачивать
+    действия пользователей в приложении. На границах операции, то есть входе и
+    выходе в блок with, происходит вызов коллбеков и работа с вложенными
+    контекстными менеджерами. Подробно жизненный цикл описан в README и
+    docstring-ах методов.
 
+    Потокобезопасен, локален для текущего потока.
     """
+
+    _context_managers: List[ContextManager]
+    _before_start: List[Callback]
+    _after_start: List[Callback]
+    _before_complete: List[Callback]
+    _after_complete: List[Callback]
+    _on_cancel: List[Callback]
+    _on_finish: List[Callback]
+    _exit_stack: ExitStack
+    _calls_count: int
+    _current: Optional[Callbacks]
 
     def __init__(
         self,
-        context_managers: List[ContextManager] = None,
-        before_start: List[Callback] = None,
-        after_start: List[Callback] = None,
-        before_complete: List[Callback] = None,
-        after_complete: List[Callback] = None,
-        on_cancel: List[Callback] = None,
-        on_finish: List[Callback] = None,
+        context_managers: OptionalContextManagers = None,
+        before_start: OptionalCallbacks = None,
+        after_start: OptionalCallbacks = None,
+        before_complete: OptionalCallbacks = None,
+        after_complete: OptionalCallbacks = None,
+        on_cancel: OptionalCallbacks = None,
+        on_finish: OptionalCallbacks = None,
     ):
-        self._context_managers = context_managers or []
-        self._before_start = before_start or []
-        self._after_start = after_start or []
-        self._before_complete = before_complete or []
-        self._after_complete = after_complete or []
-        self._on_cancel = on_cancel or []
-        self._on_finish = on_finish or []
-        self._calls_count = 0
+        self._context_managers = to_list(context_managers)
+        self._before_start = to_list(before_start)
+        self._after_start = to_list(after_start)
+        self._before_complete = to_list(before_complete)
+        self._after_complete = to_list(after_complete)
+        self._on_cancel = to_list(on_cancel)
+        self._on_finish = to_list(on_finish)
         self._exit_stack = ExitStack()
+        self._calls_count = 0
         self._current = None
 
     def _new_callbacks(self):
@@ -46,9 +76,13 @@ class Operation(threading.local):
     def __enter__(self):
         """
         Запуск операции.
-        При первом обращении запускает callback-и before_start, затем
+
+        При первом обращении запускает коллбеки before_start, затем
         выполняет вход во все указанные контекстные менеджеры, затем
-        запускает callback-и after_start.
+        запускает коллбеки after_start.
+
+        Если что-то пошло не так, вызовет on_cancel, затем on_finish, выбросит
+        исключение наружу.
         """
         if self._calls_count == 0:
             self._current = self._new_callbacks()
@@ -81,7 +115,13 @@ class Operation(threading.local):
         exc_tb: Optional[TracebackType],
     ) -> bool:
         """
+        Окончание операции.
 
+        Вызывает коллбеки before_complete, потом совершает выход из контекстных
+        менеджеров, затем вызывает after_complete.
+
+        Если что-то пошло не так, вызовет on_cancel, затем on_finish, выбросит
+        исключение наружу.
         """
         self._calls_count -= 1
 

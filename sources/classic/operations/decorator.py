@@ -1,33 +1,46 @@
-from functools import wraps, partial
-from typing import Any, Optional
+from functools import wraps
 
-from classic.components import add_extra_annotation
-from classic.components.types import Method, Decorator
+try:
+    from classic.components import add_extra_annotation
+except ImportError:
+    def add_extra_annotation(fn):
+        return fn
 
 from .operation import Operation
 
 
-def operation(
-    original_method: Optional[Method] = None,
-    prop_name: str = 'operation_',
-) -> Method | Decorator:
+def doublewrap(f):
+    """
+    Классный сниппет, облегчающий создание декораторов с параметрами.
+    Взято отсюда: https://stackoverflow.com/a/14412901
+    """
 
-    def decorate(function: Method) -> Method:
+    @wraps(f)
+    def new_dec(*args, **kwargs):
+        if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
+            # actual decorated function
+            return f(args[0])
+        else:
+            # decorator arguments
+            return lambda realf: f(realf, *args, **kwargs)
 
-        @wraps(function)
-        def wrapper(self, *args: Any, **kwargs: Any) -> Any:
-            with getattr(self, prop_name):
-                result = function(self, *args, **kwargs)
-
-            return result
-
-        return add_extra_annotation(wrapper, prop_name, Operation)
-
-    if original_method:
-        return decorate(original_method)
-
-    return decorate
+    return new_dec
 
 
-def customized_operation(prop_name: str):
-    return partial(operation, prop_name=prop_name)
+@doublewrap
+def operation(method, prop: str = 'operation_'):
+    """Сахар для облегчения применения операций.
+    По сути просто оборачивает функцию в блок with c указанным полем из self.
+
+    Если установлена библиотека classic.components, то добавляет операцию в
+    дополнительные аннотации.
+    """
+
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with getattr(self, prop):
+            result = method(self, *args, **kwargs)
+
+        return result
+
+    return add_extra_annotation(wrapper, prop, Operation)
