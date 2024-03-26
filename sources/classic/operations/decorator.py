@@ -6,7 +6,7 @@ from .operation import Operation
 
 
 @doublewrap
-def operation(method, prop: str = 'operation_', type_: Operation = Operation):
+def operation(method, prop: str = 'operation_'):
     """Сахар для облегчения применения операций.
     По сути просто оборачивает функцию в блок with c указанным полем из self.
 
@@ -21,4 +21,4 @@ def operation(method, prop: str = 'operation_', type_: Operation = Operation):
 
         return result
 
-    return add_extra_annotation(wrapper, prop, type_)
+    return add_extra_annotation(wrapper, prop, Operation)
