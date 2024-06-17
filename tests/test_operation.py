@@ -3,7 +3,7 @@ from typing import ContextManager
 
 import pytest
 
-from classic.operations import Operation, operation
+from classic.operations import Operation, operation, Cancel
 
 
 class Service:
@@ -50,6 +50,14 @@ class Service:
     @operation
     def return_operation_in_progress_state(self):
         return self.operation_.in_progress
+
+    def cancel_no_suppress(self):
+        with self.operation_:
+            raise self.operation_.Cancel
+
+    def cancel_with_suppress(self):
+        with self.operation_:
+            raise Cancel(suppress=True)
 
 
 class CM:
@@ -409,3 +417,12 @@ def test_instancing_with_no_iterable():
     assert operation_._after_complete == [after_complete]
     assert operation_._on_cancel == []
     assert operation_._on_finish == []
+
+
+def test_cancel_with_suppress_false(service):
+    with pytest.raises(Cancel):
+        service.cancel_no_suppress()
+
+
+def test_cancel_with_suppress_true(service):
+    service.cancel_with_suppress()
