@@ -2,7 +2,7 @@ from functools import wraps
 
 from classic.components import add_extra_annotation, doublewrap
 
-from .operation import Operation
+from .operation import Operation, Cancel
 
 
 @doublewrap
@@ -22,3 +22,6 @@ def operation(method, prop: str = 'operation_', type_: Operation = Operation):
         return result
 
     return add_extra_annotation(wrapper, prop, type_)
+
+
+operation.Cancel = Cancel

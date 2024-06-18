@@ -1,6 +1,8 @@
 from contextlib import ExitStack
 from types import TracebackType
-from typing import List, Optional, Type, Iterable, ContextManager, Union
+from typing import (
+    List, Optional, Type, Iterable, ContextManager, Union, ClassVar
+)
 import threading
 
 from .callbacks import Callback, Callbacks
@@ -17,6 +19,12 @@ def to_list(obj):
         return list(obj)
     else:
         return [obj]
+
+
+class Cancel(Exception):
+
+    def __init__(self, suppress: bool = False):
+        self.suppress = suppress
 
 
 class Operation(threading.local):
@@ -42,6 +50,8 @@ class Operation(threading.local):
     _exit_stack: ExitStack
     _calls_count: int
     _current: Optional[Callbacks]
+
+    Cancel: ClassVar[Type[Cancel]] = Cancel
 
     def __init__(
         self,
@@ -128,6 +138,8 @@ class Operation(threading.local):
         if self._calls_count != 0:
             return False
 
+        suppress = False
+
         if exc_type is None:
             try:
                 self._handle_for_first_error(
@@ -150,12 +162,16 @@ class Operation(threading.local):
                     self._current.after_complete
                 )
             else:
+                # Используется raise для того, чтобы в случае исключения в
+                # callback отработал _cancel()
                 raise exc_val
         except Exception:
             self._cancel()
             raise
         finally:
             self._finish()
+            if isinstance(exc_val, Cancel):
+                return exc_val.suppress
 
         return False
 

@@ -237,3 +237,40 @@ class SomeService:
         with self.write:
             self.target_repo.write(some_objects)
 ```
+
+## Отмена операции
+Для отмены операции используется исключение Cancel:
+
+```python
+from classic.components import component
+from classic.operations import operation, Cancel, Operation
+
+@component
+class SomeService:
+    
+    @operation
+    def plain_usage(self):
+        # после этого исключения class Operation произведет отмену операции, 
+        # при этом исключение Cancel будет выброшено наружу 
+        raise Cancel
+    
+    @operation
+    def plain_usage_with_suppress(self):
+        # Если установить suppress=True, так же произойдет отмена, 
+        # но исключение НЕ БУДЕТ выброшено наружу  
+        raise Cancel(suppress=True)
+    
+    @operation
+    def class_usage(self):
+        # добавлено ради сахара, ведет себя точно так же 
+        raise Operation.Cancel
+
+    @operation
+    def decorator_usage(self):
+        # добавлено ради сахара, ведет себя точно так же
+        raise operation.Cancel
+    
+```
+
+Строго говоря, для отмены операции можно использовать любое исключение. Cancel 
+добавлен для возможности подавить распространение исключения.
