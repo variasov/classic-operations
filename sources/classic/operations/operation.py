@@ -138,8 +138,6 @@ class Operation(threading.local):
         if self._calls_count != 0:
             return False
 
-        suppress = False
-
         if exc_type is None:
             try:
                 self._handle_for_first_error(
@@ -173,7 +171,7 @@ class Operation(threading.local):
             if isinstance(exc_val, Cancel):
                 return exc_val.suppress
 
-        return False
+            return False
 
     @property
     def in_progress(self) -> bool:
