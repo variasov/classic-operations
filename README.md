@@ -274,3 +274,64 @@ class SomeService:
 
 Строго говоря, для отмены операции можно использовать любое исключение. Cancel 
 добавлен для возможности подавить распространение исключения.
+
+## Вывод ID операции в логи
+
+В операцию встроен атрибут "ID операции". При входе в блок with будет вызван 
+`__enter__` внутри которого будет сгенерировано значение ID операции (по 
+алгоритму uuid4), при выходе - `__exit__`, внутри которого значение ID операции 
+будет сброшено (станет равно None).
+
+Сгенерированное ID операции можно добавить для выводов в логи, как указано в 
+примере ниже:
+
+```python
+import logging
+
+from classic.components import component
+from classic.operations import Operation, operation
+
+
+# Код приложения
+@component
+class SomeService:
+    logger: logging.Logger
+
+    @operation
+    def some_method(self):
+        self.logger.info('Some log')
+
+
+# Настройка логгера, самое главное: 
+#   добавление operation_id в формат выводимого сообщения
+logging.basicConfig(
+    level='INFO',
+    format=(
+        '%(asctime)s.%(msecs)03d [%(levelname)s]|[%(name)s]'
+        '|[%(operation_id)s]: %(message)s'
+    ),
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
+
+logger = logging.getLogger('app')
+operation_ = Operation()
+service = SomeService(
+    operation_=operation_,
+    logger=logger,
+)
+
+# Добавляем operation_id в выводимую запись 
+old_factory = logging.getLogRecordFactory()
+
+
+def record_factory(*args, **kwargs):
+    record = old_factory(*args, **kwargs)
+    record.operation_id = operation_.id
+    return record
+
+
+logging.setLogRecordFactory(record_factory)
+
+# Где-то в клиентском коде, например, в адаптерах:
+service.some_method()
+```

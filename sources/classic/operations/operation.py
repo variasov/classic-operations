@@ -1,9 +1,10 @@
+import threading
 from contextlib import ExitStack
 from types import TracebackType
 from typing import (
     List, Optional, Type, Iterable, ContextManager, Union, ClassVar
 )
-import threading
+from uuid import UUID, uuid4
 
 from .callbacks import Callback, Callbacks
 
@@ -50,6 +51,7 @@ class Operation(threading.local):
     _exit_stack: ExitStack
     _calls_count: int
     _current: Optional[Callbacks]
+    _id: Optional[UUID]
 
     Cancel: ClassVar[Type[Cancel]] = Cancel
 
@@ -73,6 +75,17 @@ class Operation(threading.local):
         self._exit_stack = ExitStack()
         self._calls_count = 0
         self._current = None
+        self._id = None
+
+    @property
+    def id(self):
+        return self._id
+
+    @id.setter
+    def id(self, value: UUID):
+        if not isinstance(value, UUID):
+            raise ValueError('Operation id must be instance of UUID')
+        self._id = value
 
     def _new_callbacks(self):
         """Порождает новый контейнер с callback-ами."""
@@ -95,6 +108,7 @@ class Operation(threading.local):
         исключение наружу.
         """
         if self._calls_count == 0:
+            self._id = uuid4()
             self._current = self._new_callbacks()
 
             try:
@@ -168,6 +182,7 @@ class Operation(threading.local):
             raise
         finally:
             self._finish()
+            self._id = None
             if isinstance(exc_val, Cancel):
                 return exc_val.suppress
 
