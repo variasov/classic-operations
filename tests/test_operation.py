@@ -4,7 +4,7 @@ from typing import ContextManager
 import pytest
 
 from classic.operations import Operation, operation, Cancel
-
+from uuid import UUID
 
 class Service:
 
@@ -58,6 +58,17 @@ class Service:
     def cancel_with_suppress(self):
         with self.operation_:
             raise Cancel(suppress=True)
+
+    def get_operation_id_with_cm(self):
+        with self.operation_:
+            return self.get_operation_id()
+
+    @operation
+    def get_operation_id_with_decorator(self):
+        return self.get_operation_id()
+
+    def get_operation_id(self):
+        return self.operation_.id
 
 
 class CM:
@@ -426,3 +437,27 @@ def test_cancel_with_suppress_false(service):
 
 def test_cancel_with_suppress_true(service):
     service.cancel_with_suppress()
+
+
+def test_operation_id_generation_with_decorator(service):
+    before_call = service.get_operation_id()
+    assert before_call is None
+
+    during_call = service.get_operation_id_with_decorator()
+    assert during_call is not None
+    assert isinstance(during_call, UUID)
+
+    after_call = service.get_operation_id()
+    assert after_call is None
+
+
+def test_operation_id_generation_with_cm(service):
+    before_call = service.get_operation_id()
+    assert before_call is None
+
+    during_call = service.get_operation_id_with_cm()
+    assert during_call is not None
+    assert isinstance(during_call, UUID)
+
+    after_call = service.get_operation_id()
+    assert after_call is None
